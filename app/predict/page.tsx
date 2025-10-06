@@ -43,6 +43,8 @@ interface PredictionHistory {
 export default function PredictPage() {
   const [jobDescription, setJobDescription] = useState("")
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [scanStage, setScanStage] = useState<string | null>(null)
+  const [progress, setProgress] = useState(0)
   const [result, setResult] = useState<PredictionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [history, setHistory] = useState<PredictionHistory[]>([
@@ -74,30 +76,35 @@ export default function PredictPage() {
 
     setIsAnalyzing(true)
     setError(null)
+    setResult(null)
+    setScanStage("Scanning job description...")
+    setProgress(0)
+
+    const steps = [
+      "Scanning job description...",
+      "Checking company domain...",
+      "Analyzing salary and keywords...",
+      "Cross-verifying job details...",
+      "Finalizing prediction...",
+    ]
+
+    // Simulate realistic scanning process
+    for (let i = 0; i < steps.length; i++) {
+      setScanStage(steps[i])
+      setProgress(((i + 1) / steps.length) * 100)
+      await new Promise((r) => setTimeout(r, 700))
+    }
 
     try {
-      console.log("[v0] Making API call to backend...")
-
       const response = await fetch("http://127.0.0.1:8000/predict", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          text: jobDescription,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: jobDescription }),
       })
 
-      console.log("[v0] API response status:", response.status)
-
-      if (!response.ok) {
-        throw new Error(`API request failed with status ${response.status}`)
-      }
-
+      if (!response.ok) throw new Error(`API request failed with ${response.status}`)
       const data = await response.json()
-      console.log("[v0] API response data:", data)
 
-      // Extract suspicious keywords from the job description
       const suspiciousKeywords = [
         "upfront payment",
         "work from home",
@@ -111,8 +118,8 @@ export default function PredictPage() {
         "pay fee",
       ]
 
-      const foundKeywords = suspiciousKeywords.filter((keyword) =>
-        jobDescription.toLowerCase().includes(keyword.toLowerCase()),
+      const foundKeywords = suspiciousKeywords.filter((kw) =>
+        jobDescription.toLowerCase().includes(kw.toLowerCase())
       )
 
       const newResult: PredictionResult = {
@@ -135,17 +142,17 @@ export default function PredictPage() {
         timestamp: newResult.timestamp,
         jobTitle: newResult.jobTitle,
       }
-
       setHistory((prev) => [historyItem, ...prev.slice(0, 4)])
     } catch (err) {
-      console.error("[v0] API call failed:", err)
       setError(
         err instanceof Error
           ? `Failed to analyze job posting: ${err.message}`
-          : "Failed to analyze job posting. Please check if the backend server is running.",
+          : "Failed to analyze job posting. Please check if the backend server is running."
       )
     } finally {
       setIsAnalyzing(false)
+      setScanStage(null)
+      setProgress(0)
     }
   }
 
@@ -167,27 +174,23 @@ Analyzed: ${result.timestamp.toLocaleString()}`
   }
 
   const downloadReport = () => {
-    // In a real app, this would generate and download a PDF
     alert("PDF report download would be implemented here")
   }
 
   const formatTimeAgo = (date: Date) => {
     const now = new Date()
     const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60))
-
-    if (diffInMinutes < 60) {
-      return `${diffInMinutes}m ago`
-    } else if (diffInMinutes < 1440) {
-      return `${Math.floor(diffInMinutes / 60)}h ago`
-    } else {
-      return `${Math.floor(diffInMinutes / 1440)}d ago`
-    }
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`
+    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`
+    return `${Math.floor(diffInMinutes / 1440)}d ago`
   }
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-6xl">
       <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl mb-4">Job Posting Analyzer</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl mb-4">
+          Job Posting Analyzer
+        </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
           Paste any job description below and get instant AI-powered analysis to detect potential fraud.
         </p>
@@ -210,7 +213,7 @@ Analyzed: ${result.timestamp.toLocaleString()}`
             <CardContent className="space-y-4">
               <div className="relative">
                 <Textarea
-                  placeholder="Paste the job description here... Include details like job title, company name, requirements, salary, and contact information for best results."
+                  placeholder="Paste the job description here..."
                   value={jobDescription}
                   onChange={(e) => setJobDescription(e.target.value)}
                   className="min-h-[200px] resize-none"
@@ -237,7 +240,6 @@ Analyzed: ${result.timestamp.toLocaleString()}`
                   </>
                 )}
               </Button>
-
               {error && (
                 <Alert variant="destructive">
                   <AlertTriangle className="h-4 w-4" />
@@ -246,6 +248,22 @@ Analyzed: ${result.timestamp.toLocaleString()}`
               )}
             </CardContent>
           </Card>
+
+          {/* Scanning Animation */}
+          {isAnalyzing && scanStage && (
+            <Card className="animate-pulse border-primary/30">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-primary">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  {scanStage}
+                </CardTitle>
+                <CardDescription>AI is verifying job authenticity...</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Progress value={progress} />
+              </CardContent>
+            </Card>
+          )}
 
           {/* Results Section */}
           {result && (
@@ -279,14 +297,43 @@ Analyzed: ${result.timestamp.toLocaleString()}`
                     variant={result.prediction === "fake" ? "destructive" : "default"}
                     className="text-lg px-4 py-2 mb-4"
                   >
-                    {result.prediction === "fake" ? "Fake Job Posting" : "Legitimate Job Posting"}
+                    {result.prediction === "fake"
+                      ? "Fake Job Posting"
+                      : "Legitimate Job Posting"}
                   </Badge>
                   <div className="space-y-2">
                     <div className="text-sm text-muted-foreground">Confidence Score</div>
-                    <div className="text-3xl font-bold text-foreground">{result.confidence}%</div>
-                    <Progress value={result.confidence} className="w-full max-w-xs mx-auto" />
+                    <div className="text-3xl font-bold text-foreground">
+                      {result.confidence}%
+                    </div>
+                    <Progress
+                      value={result.confidence}
+                      className="w-full max-w-xs mx-auto"
+                    />
                   </div>
                 </div>
+
+                {/* Reasoning Section */}
+                {result.prediction === "fake" && (
+                  <div className="bg-destructive/10 border border-destructive/30 p-4 rounded-lg space-y-2">
+                    <h4 className="font-semibold flex items-center gap-2 text-destructive">
+                      <AlertTriangle className="h-4 w-4" /> Why this looks fake
+                    </h4>
+                    <ul className="list-disc list-inside text-sm text-destructive/90">
+                      {result.suspiciousKeywords.length > 0 ? (
+                        result.suspiciousKeywords.map((kw, i) => (
+                          <li key={i}>Contains suspicious term: “{kw}”</li>
+                        ))
+                      ) : (
+                        <li>Unrealistic or vague job details detected.</li>
+                      )}
+                    </ul>
+                    <p className="text-xs text-muted-foreground">
+                      Recommendation: Avoid sharing personal or financial information until
+                      verified.
+                    </p>
+                  </div>
+                )}
 
                 {/* Job Summary */}
                 <div>
@@ -295,8 +342,12 @@ Analyzed: ${result.timestamp.toLocaleString()}`
                     Job Summary
                   </h4>
                   <div className="bg-muted/30 p-4 rounded-lg">
-                    <div className="font-medium text-sm mb-2">Job Title: {result.jobTitle}</div>
-                    <div className="text-sm text-muted-foreground">{result.summary}</div>
+                    <div className="font-medium text-sm mb-2">
+                      Job Title: {result.jobTitle}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {result.summary}
+                    </div>
                   </div>
                 </div>
 
@@ -317,7 +368,6 @@ Analyzed: ${result.timestamp.toLocaleString()}`
                   </div>
                 )}
 
-                {/* Analysis Timestamp */}
                 <div className="text-xs text-muted-foreground flex items-center gap-1">
                   <Clock className="h-3 w-3" />
                   Analyzed on {result.timestamp.toLocaleString()}
@@ -342,7 +392,8 @@ Analyzed: ${result.timestamp.toLocaleString()}`
                 <Alert>
                   <AlertTriangle className="h-4 w-4" />
                   <AlertDescription>
-                    <strong>Red Flags:</strong> Requests for upfront payments, vague job descriptions, or urgent hiring.
+                    <strong>Red Flags:</strong> Requests for upfront payments, vague job
+                    descriptions, or urgent hiring.
                   </AlertDescription>
                 </Alert>
                 <div className="space-y-2">
@@ -370,14 +421,26 @@ Analyzed: ${result.timestamp.toLocaleString()}`
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {history.map((item, index) => (
-                  <div key={item.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                {history.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between p-3 rounded-lg bg-muted/30"
+                  >
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">{item.jobTitle}</div>
-                      <div className="text-xs text-muted-foreground">{formatTimeAgo(item.timestamp)}</div>
+                      <div className="text-sm font-medium truncate">
+                        {item.jobTitle}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {formatTimeAgo(item.timestamp)}
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant={item.prediction === "fake" ? "destructive" : "default"} className="text-xs">
+                      <Badge
+                        variant={
+                          item.prediction === "fake" ? "destructive" : "default"
+                        }
+                        className="text-xs"
+                      >
                         {item.confidence}%
                       </Badge>
                       {item.prediction === "fake" ? (
@@ -398,7 +461,8 @@ Analyzed: ${result.timestamp.toLocaleString()}`
               <div className="text-center space-y-4">
                 <h3 className="font-semibold">Need More Features?</h3>
                 <p className="text-sm text-muted-foreground">
-                  Upgrade to Pro for unlimited predictions, detailed reports, and prediction history.
+                  Upgrade to Pro for unlimited predictions, detailed reports, and
+                  prediction history.
                 </p>
                 <Button asChild className="w-full">
                   <Link href="/pricing">
